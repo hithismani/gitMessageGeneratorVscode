@@ -18,6 +18,17 @@ Desktop.ini
 !.vscode/extensions.json
 .idea/
 
+# AI tool configs
+.claude/
+.opencode/
+.cursor/
+.continue/
+.aider*
+.copilot/
+.codeium/
+.windsurf/
+.tabby/
+
 # Environment / secrets
 .env
 .env.*

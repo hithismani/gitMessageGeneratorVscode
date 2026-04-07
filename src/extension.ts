@@ -9,6 +9,8 @@ interface GitExtensionAPI {
 
 interface GitAPI {
   repositories: GitRepository[];
+  onDidOpenRepository: vscode.Event<GitRepository>;
+  onDidCloseRepository: vscode.Event<GitRepository>;
 }
 
 interface GitRepository {
@@ -16,15 +18,24 @@ interface GitRepository {
   inputBox: { value: string };
 }
 
+let gitApi: GitAPI | undefined;
+let statusBarItem: vscode.StatusBarItem;
+
+async function getGitApi(): Promise<GitAPI | undefined> {
+  if (gitApi) return gitApi;
+  const ext = vscode.extensions.getExtension<GitExtensionAPI>("vscode.git");
+  if (!ext) return undefined;
+  const git = ext.isActive ? ext.exports : await ext.activate();
+  gitApi = git.getAPI(1);
+  return gitApi;
+}
+
 async function getRepository(): Promise<GitRepository | undefined> {
-  const gitExtension = vscode.extensions.getExtension<GitExtensionAPI>("vscode.git");
-  if (!gitExtension) {
+  const api = await getGitApi();
+  if (!api) {
     vscode.window.showErrorMessage("Git extension not found.");
     return undefined;
   }
-
-  const git = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate();
-  const api = git.getAPI(1);
 
   if (api.repositories.length === 0) {
     vscode.window.showErrorMessage("No Git repositories found in workspace.");
@@ -35,7 +46,6 @@ async function getRepository(): Promise<GitRepository | undefined> {
     return api.repositories[0];
   }
 
-  // Multiple repos — let user pick
   const items = api.repositories.map((repo) => ({
     label: repo.rootUri.fsPath,
     repo,
@@ -67,9 +77,7 @@ async function handleGenerateCommitMessage(): Promise<void> {
   }
 
   const repo = await getRepository();
-  if (!repo) {
-    return;
-  }
+  if (!repo) return;
 
   const previousMessage = repo.inputBox.value.trim() || undefined;
 
@@ -132,40 +140,61 @@ async function handleSelectModel(): Promise<void> {
   } catch (err) {
     quickPick.dispose();
     const message = err instanceof Error ? err.message : String(err);
-    vscode.window.showErrorMessage(`Commit Pilot: Failed to fetch models. ${message}`);
+    vscode.window.showErrorMessage(
+      `Commit Pilot: Failed to fetch models. ${message}`
+    );
     return;
   }
 
   quickPick.onDidAccept(async () => {
-    const selected = quickPick.selectedItems[0] as { label: string; modelName?: string } | undefined;
+    const selected = quickPick.selectedItems[0] as
+      | { label: string; modelName?: string }
+      | undefined;
     quickPick.dispose();
     if (selected?.modelName) {
       const config = vscode.workspace.getConfiguration("chutesCommit");
-      await config.update("model", selected.modelName, vscode.ConfigurationTarget.Global);
-      vscode.window.showInformationMessage(`Commit Pilot: Model set to ${selected.modelName}`);
+      await config.update(
+        "model",
+        selected.modelName,
+        vscode.ConfigurationTarget.Global
+      );
+      vscode.window.showInformationMessage(
+        `Commit Pilot: Model set to ${selected.modelName}`
+      );
     }
   });
 
   quickPick.onDidHide(() => quickPick.dispose());
 }
 
-let statusBarItem: vscode.StatusBarItem;
+// --- Status bar ---
 
 function updateStatusBar(): void {
   const config = vscode.workspace.getConfiguration("chutesCommit");
   const model = config.get<string>("model", "Qwen/Qwen2.5-Coder-32B-Instruct");
-  // Show just the model name part (after the org/)
   const shortName = model.includes("/") ? model.split("/").pop()! : model;
   statusBarItem.text = `$(sparkle) ${shortName}`;
   statusBarItem.tooltip = `Commit Pilot: ${model}\nClick to change model`;
 }
 
+function updateStatusBarVisibility(): void {
+  const hasRepos = gitApi && gitApi.repositories.length > 0;
+  if (hasRepos) {
+    statusBarItem.show();
+  } else {
+    statusBarItem.hide();
+  }
+}
+
+// --- Activation ---
+
 export function activate(context: vscode.ExtensionContext): void {
-  // Status bar item — shows current model, click to change
-  statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  statusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100
+  );
   statusBarItem.command = "chutes-commit.selectModel";
   updateStatusBar();
-  statusBarItem.show();
 
   context.subscriptions.push(
     statusBarItem,
@@ -177,17 +206,29 @@ export function activate(context: vscode.ExtensionContext): void {
       "chutes-commit.selectModel",
       handleSelectModel
     ),
-    vscode.commands.registerCommand(
-      "chutes-commit.openSettings",
-      () => vscode.commands.executeCommand("workbench.action.openSettings", "chutesCommit")
+    vscode.commands.registerCommand("chutes-commit.openSettings", () =>
+      vscode.commands.executeCommand(
+        "workbench.action.openSettings",
+        "chutesCommit"
+      )
     ),
-    // Update status bar when settings change
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("chutesCommit.model")) {
         updateStatusBar();
       }
     })
   );
+
+  // Show status bar only when git repos are present
+  getGitApi().then((api) => {
+    if (api) {
+      updateStatusBarVisibility();
+      context.subscriptions.push(
+        api.onDidOpenRepository(() => updateStatusBarVisibility()),
+        api.onDidCloseRepository(() => updateStatusBarVisibility())
+      );
+    }
+  });
 }
 
 export function deactivate(): void {}

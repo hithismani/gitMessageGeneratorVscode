@@ -1,20 +1,66 @@
-import * as https from "https";
+import { httpRequest } from "./http";
 
-const API_URL = "https://llm.chutes.ai/v1/chat/completions";
+const LLM_URL = "https://llm.chutes.ai/v1/chat/completions";
+const MODELS_URL = "https://api.chutes.ai/chutes/";
 const CLIENT_TIMEOUT_MS = 35_000;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
 
-interface ChatCompletionResponse {
-  choices: Array<{
-    message: {
-      content: string;
-    };
-  }>;
-  error?: {
-    message?: string;
-  };
+// --- Model cache (5 min TTL) ---
+
+const MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export interface ChutesModel {
+  name: string;
+  tagline: string;
+  hot: boolean;
+  invocationCount: number;
 }
+
+let cachedModels: ChutesModel[] | null = null;
+let cacheTimestamp = 0;
+
+export async function fetchAvailableModels(): Promise<ChutesModel[]> {
+  if (cachedModels && Date.now() - cacheTimestamp < MODEL_CACHE_TTL_MS) {
+    return cachedModels;
+  }
+
+  const allModels: ChutesModel[] = [];
+  let page = 0;
+  const limit = 200;
+
+  while (true) {
+    const url = `${MODELS_URL}?include_public=true&template=vllm&limit=${limit}&page=${page}`;
+    const raw = await httpRequest({ url });
+    const data = JSON.parse(raw);
+
+    for (const item of data.items || []) {
+      allModels.push({
+        name: item.name,
+        tagline: item.tagline || "",
+        hot: !!item.hot,
+        invocationCount: item.invocation_count || 0,
+      });
+    }
+
+    if (!data.items || data.items.length < limit) {
+      break;
+    }
+    page++;
+  }
+
+  // Hot models first, then by popularity
+  allModels.sort((a, b) => {
+    if (a.hot !== b.hot) return a.hot ? -1 : 1;
+    return b.invocationCount - a.invocationCount;
+  });
+
+  cachedModels = allModels;
+  cacheTimestamp = Date.now();
+  return allModels;
+}
+
+// --- Commit message generation ---
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -38,165 +84,6 @@ function cleanResponse(text: string): string {
   }
 
   return cleaned;
-}
-
-function request(
-  apiKey: string,
-  body: string,
-  signal?: AbortSignal
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new Error("Request cancelled"));
-      return;
-    }
-
-    const url = new URL(API_URL);
-
-    const req = https.request(
-      {
-        hostname: url.hostname,
-        port: 443,
-        path: url.pathname,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        timeout: CLIENT_TIMEOUT_MS,
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (chunk: Buffer) => chunks.push(chunk));
-        res.on("end", () => {
-          const rawBody = Buffer.concat(chunks).toString("utf-8");
-
-          if (res.statusCode !== 200) {
-            try {
-              const parsed = JSON.parse(rawBody);
-              const msg =
-                parsed.error?.message ||
-                parsed.detail ||
-                `HTTP ${res.statusCode}`;
-              reject(new Error(msg));
-            } catch {
-              reject(new Error(`HTTP ${res.statusCode}: ${rawBody.slice(0, 200)}`));
-            }
-            return;
-          }
-
-          try {
-            const parsed: ChatCompletionResponse = JSON.parse(rawBody);
-            const content = parsed.choices?.[0]?.message?.content;
-            if (!content) {
-              reject(new Error("Empty response from model"));
-              return;
-            }
-            resolve(content);
-          } catch {
-            reject(new Error("Failed to parse API response"));
-          }
-        });
-      }
-    );
-
-    req.on("error", reject);
-    req.on("timeout", () => {
-      req.destroy();
-      reject(new Error("Request timed out"));
-    });
-
-    if (signal) {
-      const onAbort = () => {
-        req.destroy();
-        reject(new Error("Request cancelled"));
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-      req.on("close", () => signal.removeEventListener("abort", onAbort));
-    }
-
-    req.write(body);
-    req.end();
-  });
-}
-
-// --- Model listing ---
-
-const MODELS_BASE_URL = "https://api.chutes.ai/chutes/";
-
-export interface ChutesModel {
-  name: string;
-  tagline: string;
-  hot: boolean;
-  invocationCount: number;
-}
-
-function httpsGet(url: string, timeoutMs: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const req = https.get(
-      {
-        hostname: parsed.hostname,
-        port: 443,
-        path: parsed.pathname + parsed.search,
-        headers: { Accept: "application/json" },
-        timeout: timeoutMs,
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (chunk: Buffer) => chunks.push(chunk));
-        res.on("end", () => {
-          const body = Buffer.concat(chunks).toString("utf-8");
-          if (res.statusCode !== 200) {
-            reject(new Error(`HTTP ${res.statusCode}: ${body.slice(0, 200)}`));
-            return;
-          }
-          resolve(body);
-        });
-      }
-    );
-    req.on("error", reject);
-    req.on("timeout", () => {
-      req.destroy();
-      reject(new Error("Request timed out"));
-    });
-  });
-}
-
-export async function fetchAvailableModels(): Promise<ChutesModel[]> {
-  const allModels: ChutesModel[] = [];
-  let page = 0;
-  const limit = 200;
-
-  // Paginate through all vLLM chutes
-  while (true) {
-    const url = `${MODELS_BASE_URL}?include_public=true&template=vllm&limit=${limit}&page=${page}`;
-    const raw = await httpsGet(url, 15_000);
-    const data = JSON.parse(raw);
-
-    for (const item of data.items || []) {
-      allModels.push({
-        name: item.name,
-        tagline: item.tagline || "",
-        hot: !!item.hot,
-        invocationCount: item.invocation_count || 0,
-      });
-    }
-
-    // If we got fewer items than the limit, we've reached the end
-    if (!data.items || data.items.length < limit) {
-      break;
-    }
-    page++;
-  }
-
-  // Sort: hot models first, then by invocation count descending
-  allModels.sort((a, b) => {
-    if (a.hot !== b.hot) return a.hot ? -1 : 1;
-    return b.invocationCount - a.invocationCount;
-  });
-
-  return allModels;
 }
 
 export async function generateCommitMessage(options: {
@@ -226,12 +113,28 @@ export async function generateCommitMessage(options: {
     }
 
     try {
-      const raw = await request(options.apiKey, body, options.signal);
-      return cleanResponse(raw);
+      const raw = await httpRequest({
+        url: LLM_URL,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${options.apiKey}`,
+        },
+        body,
+        timeoutMs: CLIENT_TIMEOUT_MS,
+        signal: options.signal,
+      });
+
+      const parsed = JSON.parse(raw);
+      const content = parsed.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error("Empty response from model");
+      }
+
+      return cleanResponse(content);
     } catch (err) {
       lastError = err as Error;
 
-      // Don't retry on cancellation
       if (lastError.message === "Request cancelled") {
         throw lastError;
       }

@@ -86,30 +86,27 @@ export async function gatherGitContext(cwd: string): Promise<GitContext> {
     })
     .filter((f): f is NonNullable<typeof f> => f !== null);
 
-  const diffParts: string[] = [];
-
-  for (const file of files) {
-    if (isLockFile(file.path)) {
-      diffParts.push(`--- ${file.path} ---\n[lock file changes omitted]`);
-      continue;
-    }
-
-    if (file.status === "D") {
-      diffParts.push(`--- ${file.path} ---\n[file deleted]`);
-      continue;
-    }
-
-    try {
-      const diff = await git(cwd, ["diff", "--cached", "--", file.path]);
-      if (isBinaryDiff(diff)) {
-        diffParts.push(`--- ${file.path} ---\n[binary file]`);
-      } else {
-        diffParts.push(`--- ${file.path} ---\n${truncateDiff(diff)}`);
+  const diffParts = await Promise.all(
+    files.map(async (file) => {
+      if (isLockFile(file.path)) {
+        return `--- ${file.path} ---\n[lock file changes omitted]`;
       }
-    } catch {
-      diffParts.push(`--- ${file.path} ---\n[could not read diff]`);
-    }
-  }
+
+      if (file.status === "D") {
+        return `--- ${file.path} ---\n[file deleted]`;
+      }
+
+      try {
+        const diff = await git(cwd, ["diff", "--cached", "--", file.path]);
+        if (isBinaryDiff(diff)) {
+          return `--- ${file.path} ---\n[binary file]`;
+        }
+        return `--- ${file.path} ---\n${truncateDiff(diff)}`;
+      } catch {
+        return `--- ${file.path} ---\n[could not read diff]`;
+      }
+    })
+  );
 
   return {
     branch,
