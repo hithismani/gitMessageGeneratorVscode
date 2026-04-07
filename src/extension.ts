@@ -64,7 +64,7 @@ async function handleGenerateCommitMessage(): Promise<void> {
 
   if (!apiKey) {
     const action = await vscode.window.showErrorMessage(
-      "Commit Pilot: API key not configured.",
+      "Chutes Commit: API key not configured.",
       "Open Settings"
     );
     if (action === "Open Settings") {
@@ -115,7 +115,7 @@ async function handleGenerateCommitMessage(): Promise<void> {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (message !== "Request cancelled") {
-          vscode.window.showErrorMessage(`Commit Pilot: ${message}`);
+          vscode.window.showErrorMessage(`Chutes Commit: ${message}`);
         }
       }
     }
@@ -141,7 +141,7 @@ async function handleSelectModel(): Promise<void> {
     quickPick.dispose();
     const message = err instanceof Error ? err.message : String(err);
     vscode.window.showErrorMessage(
-      `Commit Pilot: Failed to fetch models. ${message}`
+      `Chutes Commit: Failed to fetch models. ${message}`
     );
     return;
   }
@@ -159,7 +159,7 @@ async function handleSelectModel(): Promise<void> {
         vscode.ConfigurationTarget.Global
       );
       vscode.window.showInformationMessage(
-        `Commit Pilot: Model set to ${selected.modelName}`
+        `Chutes Commit: Model set to ${selected.modelName}`
       );
     }
   });
@@ -174,7 +174,7 @@ function updateStatusBar(): void {
   const model = config.get<string>("model", "Qwen/Qwen2.5-Coder-32B-Instruct");
   const shortName = model.includes("/") ? model.split("/").pop()! : model;
   statusBarItem.text = `$(sparkle) ${shortName}`;
-  statusBarItem.tooltip = `Commit Pilot: ${model}\nClick to change model`;
+  statusBarItem.tooltip = `Chutes Commit: ${model}\nClick to change model`;
 }
 
 function updateStatusBarVisibility(): void {

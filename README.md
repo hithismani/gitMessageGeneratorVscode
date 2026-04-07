@@ -1,6 +1,8 @@
-# Commit Pilot
+# Chutes Commit
 
 **AI-powered commit messages using any model on [Chutes.ai](https://chutes.ai)**
+
+> **Note:** This is an unofficial community extension. It is not built, maintained, or endorsed by Chutes.ai.
 
 One click in the Source Control panel. Stage your changes, hit the sparkle button, and get a well-crafted [Conventional Commits](https://www.conventionalcommits.org/) message written for you.
 
@@ -8,9 +10,10 @@ One click in the Source Control panel. Stage your changes, hit the sparkle butto
 
 ## Why this exists
 
-Writing good commit messages is important but tedious. Most AI commit tools lock you into a single provider or model. Commit Pilot uses **Chutes.ai** as a backend, giving you access to dozens of open-source and frontier models at low cost:
+Writing good commit messages is important but tedious. Most AI commit tools lock you into a single provider or model. Chutes Commit uses **Chutes.ai** as a backend, giving you access to dozens of open-source and frontier models at low cost:
 
 - **DeepSeek V3** -- fast, cheap, great at code
+- **Qwen 2.5 Coder** -- purpose-built for code tasks
 - **Qwen3 235B** -- strong reasoning
 - **Llama 4 Maverick** -- Meta's latest
 - ...and any other model available on Chutes.ai
@@ -28,6 +31,7 @@ Chutes.ai provides an OpenAI-compatible API with access to a wide catalog of ope
 - **One-click generation** -- sparkle button appears in the Source Control title bar
 - **Conventional Commits** -- follows the spec out of the box (type, scope, description, body)
 - **Regeneration** -- click again to get a completely different message
+- **Live model browser** -- pick from all available Chutes.ai models via quick pick
 - **Smart context** -- reads your branch, recent commits, staged diffs, and file changes
 - **Lock file filtering** -- automatically skips package-lock.json, yarn.lock, and 15+ others
 - **Binary detection** -- gracefully handles binary files in diffs
@@ -67,8 +71,8 @@ Chutes.ai provides an OpenAI-compatible API with access to a wide catalog of ope
 ### From source (local development)
 
 ```bash
-git clone https://github.com/businessaddons/commit-pilot.git
-cd commit-pilot
+git clone https://github.com/hithismani/chutes-commit.git
+cd chutes-commit
 npm install
 npm run compile
 ```
@@ -79,7 +83,7 @@ Then in VS Code: `Ctrl+Shift+P` -> `Developer: Install Extension from Location..
 
 ```bash
 npm run package
-code --install-extension commit-pilot-0.1.0.vsix
+code --install-extension chutes-commit-0.1.0.vsix
 ```
 
 ---
@@ -122,7 +126,7 @@ Stage changes  ->  Click sparkle button  ->  Extension gathers git context
 | `Qwen/Qwen3-235B-A22B` | Medium | Strong reasoning, good for complex changes. |
 | `meta-llama/Llama-4-Maverick-17B-128E-Instruct` | Fast | Good alternative from Meta. |
 
-Browse all available models at [chutes.ai](https://chutes.ai).
+Browse all available models at [chutes.ai](https://chutes.ai) or use `Ctrl+Shift+P` -> **Chutes Commit: Select Model** to pick one live.
 
 ---
 
@@ -134,6 +138,12 @@ Example for a simpler style:
 ```
 Write a short, imperative commit message (max 72 chars) summarizing the staged changes. No prefixes, no scopes, just a clear description. Return only the message, nothing else.
 ```
+
+---
+
+## Disclaimer
+
+This is an unofficial, community-built extension. It is not affiliated with, endorsed by, or sponsored by Chutes.ai. All trademarks belong to their respective owners.
 
 ---
 

@@ -1,14 +1,14 @@
 {
-  "name": "commit-pilot",
-  "displayName": "Commit Pilot",
+  "name": "chutes-commit",
+  "displayName": "Chutes Commit",
   "description": "AI-powered commit messages using any model on Chutes.ai — one click in the Source Control panel",
   "version": "0.1.0",
-  "publisher": "businessaddons",
+  "publisher": "hithismani",
   "icon": "icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/businessaddons/commit-pilot"
+    "url": "https://github.com/hithismani/chutes-commit"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -36,19 +36,19 @@
         "command": "chutes-commit.generateCommitMessage",
         "title": "Generate Commit Message using Chutes.ai",
         "icon": "$(sparkle)",
-        "category": "Commit Pilot"
+        "category": "Chutes Commit"
       },
       {
         "command": "chutes-commit.selectModel",
         "title": "Select Model",
         "icon": "$(server)",
-        "category": "Commit Pilot"
+        "category": "Chutes Commit"
       },
       {
         "command": "chutes-commit.openSettings",
         "title": "Open Settings",
         "icon": "$(gear)",
-        "category": "Commit Pilot"
+        "category": "Chutes Commit"
       }
     ],
     "menus": {
@@ -71,7 +71,7 @@
       ]
     },
     "configuration": {
-      "title": "Commit Pilot",
+      "title": "Chutes Commit",
       "properties": {
         "chutesCommit.apiKey": {
           "type": "string",
@@ -82,7 +82,7 @@
         "chutesCommit.model": {
           "type": "string",
           "default": "Qwen/Qwen2.5-Coder-32B-Instruct",
-          "markdownDescription": "Model ID to use on Chutes.ai. Run **Commit Pilot: Select Model** from the command palette to browse all available models live.",
+          "markdownDescription": "Model ID to use on Chutes.ai. Run **Chutes Commit: Select Model** from the command palette to browse all available models live.",
           "order": 1
         },
         "chutesCommit.temperature": {
