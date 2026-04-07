@@ -1,0 +1,124 @@
+{
+  "name": "commit-pilot",
+  "displayName": "Commit Pilot",
+  "description": "AI-powered commit messages using any model on Chutes.ai — one click in the Source Control panel",
+  "version": "0.1.0",
+  "publisher": "businessaddons",
+  "icon": "icon.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/businessaddons/commit-pilot"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Machine Learning",
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "commit",
+    "ai",
+    "chutes",
+    "conventional-commits",
+    "deepseek",
+    "llama",
+    "qwen"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "chutes-commit.generateCommitMessage",
+        "title": "Generate Commit Message using Chutes.ai",
+        "icon": "$(sparkle)",
+        "category": "Commit Pilot"
+      },
+      {
+        "command": "chutes-commit.selectModel",
+        "title": "Select Model",
+        "icon": "$(server)",
+        "category": "Commit Pilot"
+      },
+      {
+        "command": "chutes-commit.openSettings",
+        "title": "Open Settings",
+        "icon": "$(gear)",
+        "category": "Commit Pilot"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "chutes-commit.generateCommitMessage",
+          "group": "navigation",
+          "when": "scmProvider == git"
+        },
+        {
+          "command": "chutes-commit.selectModel",
+          "group": "1_commit_pilot",
+          "when": "scmProvider == git"
+        },
+        {
+          "command": "chutes-commit.openSettings",
+          "group": "1_commit_pilot",
+          "when": "scmProvider == git"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Commit Pilot",
+      "properties": {
+        "chutesCommit.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Chutes.ai API key (cpk_...)",
+          "order": 0
+        },
+        "chutesCommit.model": {
+          "type": "string",
+          "default": "Qwen/Qwen2.5-Coder-32B-Instruct",
+          "markdownDescription": "Model ID to use on Chutes.ai. Run **Commit Pilot: Select Model** from the command palette to browse all available models live.",
+          "order": 1
+        },
+        "chutesCommit.temperature": {
+          "type": "number",
+          "default": 0.3,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Generation temperature (0-2)",
+          "order": 2
+        },
+        "chutesCommit.maxTokens": {
+          "type": "number",
+          "default": 512,
+          "minimum": 64,
+          "maximum": 2048,
+          "description": "Max response tokens (64-2048)",
+          "order": 3
+        },
+        "chutesCommit.customPrompt": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "description": "Custom system prompt override. If set, replaces the default conventional commits prompt entirely.",
+          "order": 4
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "npx @vscode/vsce package --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}
