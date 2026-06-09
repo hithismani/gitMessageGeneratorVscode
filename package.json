@@ -81,7 +81,7 @@
         },
         "chutesCommit.model": {
           "type": "string",
-          "default": "Qwen/Qwen2.5-Coder-32B-Instruct",
+          "default": "Qwen/Qwen3-32B-TEE",
           "markdownDescription": "Model ID to use on Chutes.ai. Run **Chutes Commit: Select Model** from the command palette to browse all available models live.",
           "order": 1
         },

@@ -91,17 +91,15 @@ async function handleGenerateCommitMessage(): Promise<void> {
       const abortController = new AbortController();
       token.onCancellationRequested(() => abortController.abort());
 
-      try {
-        const context = await gatherGitContext(repo.rootUri.fsPath);
-        const userMessage = assembleUserMessage(context, previousMessage);
+      let model = config.get<string>("model", "Qwen/Qwen3-32B-TEE");
+      const temperature = config.get<number>("temperature", 0.3);
+      const maxTokens = config.get<number>("maxTokens", 512);
+      const customPrompt = config.get<string>("customPrompt", "");
+      const systemPrompt = customPrompt || DEFAULT_SYSTEM_PROMPT;
+      let userMessage = "";
 
-        const model = config.get<string>("model", "Qwen/Qwen2.5-Coder-32B-Instruct");
-        const temperature = config.get<number>("temperature", 0.3);
-        const maxTokens = config.get<number>("maxTokens", 512);
-        const customPrompt = config.get<string>("customPrompt", "");
-        const systemPrompt = customPrompt || DEFAULT_SYSTEM_PROMPT;
-
-        const commitMessage = await generateCommitMessage({
+      const doGenerate = async () =>
+        generateCommitMessage({
           apiKey,
           model,
           systemPrompt,
@@ -111,12 +109,47 @@ async function handleGenerateCommitMessage(): Promise<void> {
           signal: abortController.signal,
         });
 
+      try {
+        const context = await gatherGitContext(repo.rootUri.fsPath);
+        userMessage = assembleUserMessage(context, previousMessage);
+
+        const commitMessage = await doGenerate();
         repo.inputBox.value = commitMessage;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (message !== "Request cancelled") {
-          vscode.window.showErrorMessage(`Chutes Commit: ${message}`);
+        if (message === "Request cancelled") return;
+
+        const isModelMissing =
+          /not found|does not exist|not exist/i.test(message);
+
+        if (isModelMissing) {
+          const models = await fetchAvailableModels();
+          const fallback = models.find((m) => m.hot);
+          if (fallback && fallback.name !== model) {
+            const old = model;
+            model = fallback.name;
+            await config.update(
+              "model",
+              model,
+              vscode.ConfigurationTarget.Global
+            );
+
+            try {
+              const commitMessage = await doGenerate();
+              repo.inputBox.value = commitMessage;
+              vscode.window.showInformationMessage(
+                `Chutes Commit: "${old}" not found — switched to ${model}`
+              );
+              return;
+            } catch {
+              // fallback also failed, show original error below
+            }
+          }
         }
+
+        vscode.window.showErrorMessage(
+          `Chutes Commit (${model}): ${message}`
+        );
       }
     }
   );
@@ -126,17 +159,22 @@ async function handleSelectModel(): Promise<void> {
   const quickPick = vscode.window.createQuickPick();
   quickPick.placeholder = "Search for a model...";
   quickPick.busy = true;
+  quickPick.matchOnDescription = true;
+  quickPick.matchOnDetail = true;
   quickPick.show();
+
+  let allItems: vscode.QuickPickItem[] = [];
 
   try {
     const models = await fetchAvailableModels();
     quickPick.busy = false;
-    quickPick.items = models.map((m) => ({
+    allItems = models.map((m) => ({
       label: `${m.hot ? "$(circle-filled) " : ""}${m.name}`,
       description: m.hot ? "active" : "inactive",
       detail: m.tagline,
       modelName: m.name,
     }));
+    quickPick.items = allItems;
   } catch (err) {
     quickPick.dispose();
     const message = err instanceof Error ? err.message : String(err);
@@ -145,6 +183,19 @@ async function handleSelectModel(): Promise<void> {
     );
     return;
   }
+
+  quickPick.onDidChangeValue((value) => {
+    if (!value) {
+      quickPick.items = allItems;
+      return;
+    }
+    const q = value.toLowerCase();
+    quickPick.items = allItems.filter(
+      (item) =>
+        item.label.toLowerCase().includes(q) ||
+        item.detail?.toLowerCase().includes(q)
+    );
+  });
 
   quickPick.onDidAccept(async () => {
     const selected = quickPick.selectedItems[0] as
@@ -171,7 +222,7 @@ async function handleSelectModel(): Promise<void> {
 
 function updateStatusBar(): void {
   const config = vscode.workspace.getConfiguration("chutesCommit");
-  const model = config.get<string>("model", "Qwen/Qwen2.5-Coder-32B-Instruct");
+  const model = config.get<string>("model", "Qwen/Qwen3-32B-TEE");
   const shortName = model.includes("/") ? model.split("/").pop()! : model;
   statusBarItem.text = `$(sparkle) ${shortName}`;
   statusBarItem.tooltip = `Chutes Commit: ${model}\nClick to change model`;
