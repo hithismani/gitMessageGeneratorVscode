@@ -106,7 +106,7 @@
         "gitMessageGenerator.opencodeZenKey": {
           "type": "string",
           "default": "",
-          "description": "OpenCode Zen API key (get one at https://opencode.ai/auth)",
+          "description": "OpenCode Zen / Go API key (shared — get one at https://opencode.ai/auth)",
           "order": 2
         },
         "gitMessageGenerator.model": {

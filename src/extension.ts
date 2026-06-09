@@ -201,39 +201,68 @@ async function handleGenerateCommitMessage(): Promise<void> {
 
 async function handleSelectModel(): Promise<void> {
   const config = vscode.workspace.getConfiguration(CONFIG_PREFIX);
-  const provider = getProvider(getProviderKey(config));
+
+  const providerKeys = Object.entries(PROVIDERS).map(([key, p]) => ({
+    providerKey: key,
+    provider: p,
+  }));
+
+  let currentKey = getProviderKey(config);
+  let provider = getProvider(currentKey);
 
   const quickPick = vscode.window.createQuickPick();
-  quickPick.placeholder = `Search ${provider.label} models...`;
-  quickPick.busy = true;
   quickPick.matchOnDescription = true;
   quickPick.matchOnDetail = true;
-  quickPick.show();
 
-  let allItems: vscode.QuickPickItem[] = [];
-  const modelMap = new Map<string, string>();
+  const providerButtons = providerKeys.map(({ providerKey, provider: p }) => ({
+    iconPath: new vscode.ThemeIcon("server"),
+    tooltip: `Switch to ${p.label}`,
+    providerKey,
+  }));
+  quickPick.buttons = [
+    ...providerButtons,
+    {
+      iconPath: new vscode.ThemeIcon("key"),
+      tooltip: `API key: ${provider.keyConfigKey}${provider.keyConfigKey === "opencodeZenKey" ? " (shared by Zen & Go)" : ""}`,
+      providerKey: "",
+    },
+  ];
 
-  try {
-    const models = await provider.fetchModels();
-    quickPick.busy = false;
-    for (const m of models) {
-      const label = `${m.hot ? "$(circle-filled) " : ""}${m.name}`;
-      modelMap.set(label, m.name);
-      allItems.push({
-        label,
-        description: m.hot ? "active" : "",
-        detail: m.tagline,
-      });
+  async function loadModels() {
+    quickPick.busy = true;
+    quickPick.placeholder = `Search ${provider.label} models...`;
+    quickPick.title = `${provider.label} — ${provider.keyConfigKey}${provider.keyConfigKey === "opencodeZenKey" ? " (shared)" : ""}`;
+
+    const allItems: vscode.QuickPickItem[] = [];
+    const modelMap = new Map<string, string>();
+
+    try {
+      const models = await provider.fetchModels();
+      for (const m of models) {
+        const label = `${m.hot ? "$(circle-filled) " : ""}${m.name}`;
+        modelMap.set(label, m.name);
+        allItems.push({
+          label,
+          description: m.hot ? "active" : "",
+          detail: m.tagline,
+        });
+      }
+      quickPick.items = allItems;
+    } catch (err) {
+      quickPick.items = [];
+      const message = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(
+        `gitMessageGenerator: Failed to fetch models from ${provider.label}. ${message}`
+      );
+    } finally {
+      quickPick.busy = false;
     }
-    quickPick.items = allItems;
-  } catch (err) {
-    quickPick.dispose();
-    const message = err instanceof Error ? err.message : String(err);
-    vscode.window.showErrorMessage(
-      `gitMessageGenerator: Failed to fetch models from ${provider.label}. ${message}`
-    );
-    return;
+
+    return { allItems, modelMap };
   }
+
+  let { allItems, modelMap } = await loadModels();
+  quickPick.show();
 
   quickPick.onDidChangeValue((value) => {
     if (!value) {
@@ -248,16 +277,21 @@ async function handleSelectModel(): Promise<void> {
     );
   });
 
+  quickPick.onDidTriggerButton(async (btn) => {
+    const { providerKey } = btn as { providerKey?: string };
+    if (!providerKey) return;
+    currentKey = providerKey;
+    provider = getProvider(currentKey);
+    await config.update("provider", currentKey, vscode.ConfigurationTarget.Global);
+    ({ allItems, modelMap } = await loadModels());
+  });
+
   quickPick.onDidAccept(async () => {
     const selected = quickPick.selectedItems[0];
     quickPick.dispose();
     const modelName = selected ? modelMap.get(selected.label) : undefined;
     if (modelName) {
-      await config.update(
-        "model",
-        modelName,
-        vscode.ConfigurationTarget.Global
-      );
+      await config.update("model", modelName, vscode.ConfigurationTarget.Global);
       vscode.window.showInformationMessage(
         `gitMessageGenerator: Model set to ${modelName}`
       );
