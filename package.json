@@ -2,7 +2,7 @@
   "name": "gitmessagegenerator",
   "displayName": "gitMessageGenerator",
   "description": "AI-powered git commit messages via Chutes.ai or OpenCode Zen — one click in Source Control",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "publisher": "businessaddonscom",
   "icon": "icon.png",
   "license": "MIT",
@@ -112,29 +112,17 @@
           "description": "AI provider to use for commit message generation",
           "order": 0
         },
-        "gitMessageGenerator.chutesApiKey": {
-          "type": "string",
-          "default": "",
-          "description": "Chutes.ai API key — stored securely via VS Code SecretStorage. Run gitMessageGenerator: Set API Key instead of entering here.",
-          "order": 1
-        },
-        "gitMessageGenerator.opencodeZenKey": {
-          "type": "string",
-          "default": "",
-          "description": "OpenCode Zen / Go API key — stored securely via VS Code SecretStorage. Run gitMessageGenerator: Set API Key instead of entering here.",
-          "order": 2
-        },
         "gitMessageGenerator.model": {
           "type": "string",
           "default": "",
           "markdownDescription": "Model ID to use. Run **gitMessageGenerator: Select Model** from the command palette to browse available models live.",
-          "order": 3
+"order": 1
         },
         "gitMessageGenerator.commitStyle": {
           "type": "string",
           "default": "conventional",
           "markdownDescription": "Commit message style. Built-in: `conventional`, `imperative`. Or the name of a style defined in `#gitMessageGenerator.customStyles#`.",
-          "order": 4
+          "order": 2
         },
         "gitMessageGenerator.customStyles": {
           "type": "object",
@@ -143,7 +131,7 @@
             "type": "string"
           },
           "markdownDescription": "Custom commit message styles. Key = style name, value = system prompt. Set at workspace level for per-project defaults.",
-          "order": 5
+          "order": 3
         },
         "gitMessageGenerator.temperature": {
           "type": "number",
@@ -151,7 +139,7 @@
           "minimum": 0,
           "maximum": 2,
           "description": "Generation temperature (0-2)",
-          "order": 6
+          "order": 4
         },
         "gitMessageGenerator.maxTokens": {
           "type": "number",
@@ -159,20 +147,20 @@
           "minimum": 64,
           "maximum": 2048,
           "description": "Max response tokens (64-2048)",
-          "order": 7
+          "order": 5
         },
         "gitMessageGenerator.autoFallback": {
           "type": "boolean",
           "default": true,
           "description": "Automatically switch to another available model if the configured one fails",
-          "order": 8
+          "order": 6
         },
         "gitMessageGenerator.customPrompt": {
           "type": "string",
           "default": "",
           "editPresentation": "multilineText",
           "description": "Custom system prompt override. If set, replaces the default conventional commits prompt entirely.",
-          "order": 9
+          "order": 7
         },
         "gitMessageGenerator.maxDiffLength": {
           "type": "number",
@@ -180,7 +168,7 @@
           "minimum": 500,
           "maximum": 40000,
           "description": "Max diff characters sent per file to the LLM",
-          "order": 10
+          "order": 8
         },
         "gitMessageGenerator.recentCommitCount": {
           "type": "number",
@@ -188,16 +176,14 @@
           "minimum": 0,
           "maximum": 20,
           "description": "Number of recent commits to include as context",
-          "order": 11
+          "order": 9
         },
         "gitMessageGenerator.lockFiles": {
           "type": "array",
           "default": [],
-          "items": {
-            "type": "string"
-          },
+          "items": { "type": "string" },
           "description": "Additional lock files to skip (built-in list already covers common ones)",
-          "order": 12
+          "order": 10
         },
         "gitMessageGenerator.maxRetries": {
           "type": "number",
@@ -205,7 +191,7 @@
           "minimum": 0,
           "maximum": 5,
           "description": "Max API call retries (transient errors only — auth/not-found errors never retry)",
-          "order": 13
+          "order": 11
         },
         "gitMessageGenerator.retryDelayMs": {
           "type": "number",
@@ -213,7 +199,7 @@
           "minimum": 100,
           "maximum": 10000,
           "description": "Base delay between retries in ms (increases with each attempt)",
-          "order": 14
+          "order": 12
         }
       }
     }
