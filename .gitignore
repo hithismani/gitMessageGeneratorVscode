@@ -39,3 +39,4 @@ npm-debug.log*
 
 # TypeScript incremental compilation
 *.tsbuildinfo
+package-lock.json
