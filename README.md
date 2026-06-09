@@ -1,5 +1,7 @@
 # gitMessageGenerator
 
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/BusinessAddonscom.gitmessagegenerator?label=VS%20Code%20Marketplace&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=BusinessAddonscom.gitmessagegenerator)
+
 **AI-powered git commit messages via Chutes.ai, OpenCode Zen, or OpenCode Go — one click in Source Control.**
 
 > **Requires an API key.** This extension does not provide free access — you must bring your own key from one of the supported providers. Usage, billing, and data handling are between you and the respective provider. This extension never stores, logs, or transmits your API keys except directly to the provider's API endpoint.
@@ -201,7 +203,7 @@ Stage changes → Click sparkle → Extension gathers git context
 ### From source
 
 ```bash
-git clone https://github.com/businessaddons/gitMessageGeneratorVscode.git
+git clone https://github.com/hithismani/gitMessageGeneratorVscode.git
 cd gitMessageGeneratorVscode
 npm install
 npm run compile
