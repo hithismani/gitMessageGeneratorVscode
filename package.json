@@ -2,7 +2,7 @@
   "name": "gitmessagegenerator",
   "displayName": "gitMessageGenerator",
   "description": "AI-powered git commit messages via Chutes.ai or OpenCode Zen — one click in Source Control",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "businessaddonscom",
   "icon": "icon.png",
   "license": "MIT",
