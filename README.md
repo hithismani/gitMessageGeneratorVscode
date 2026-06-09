@@ -158,6 +158,8 @@ Stage changes → Click sparkle → Extension gathers git context
 
 ## Recommended models
 
+> **As of 2026-06-09.** Run `gitMessageGenerator: Select Model` for the full live list — models change frequently. These are examples of what's available.
+
 ### Chutes.ai
 
 | Model | Notes |
