@@ -2,7 +2,7 @@
 
 **AI-powered git commit messages via Chutes.ai, OpenCode Zen, or OpenCode Go — one click in Source Control.**
 
-> **Requires an API key.** This extension does not provide free access — you must bring your own key from one of the supported providers.
+> **Requires an API key.** This extension does not provide free access — you must bring your own key from one of the supported providers. Usage, billing, and data handling are between you and the respective provider. This extension never stores, logs, or transmits your API keys except directly to the provider's API endpoint.
 
 Stage your changes, hit the sparkle button, get a well-crafted commit message. Supports [Conventional Commits](https://www.conventionalcommits.org/), imperative style, or your own custom format.
 
@@ -223,6 +223,10 @@ code --install-extension gitmessagegenerator-0.2.0.vsix
 On first activation, settings from the old `chutesCommit.*` prefix are automatically copied to `gitMessageGenerator.*`.
 
 ---
+
+## Disclaimer
+
+This extension is not affiliated with, endorsed by, or sponsored by Chutes.ai, OpenCode (Anomaly), or any model provider. All trademarks belong to their respective owners. API key usage, billing, and data handling are solely between you and your provider.
 
 ## License
 
