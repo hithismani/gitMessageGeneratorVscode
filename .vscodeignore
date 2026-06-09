@@ -1,6 +1,11 @@
 .vscode/**
 node_modules/**
 src/**
-tsconfig.json
+.claude/**
+.opencode/**
+.git/**
 .gitignore
+.gitattributes
+tsconfig.json
 **/*.map
+*.vsix
