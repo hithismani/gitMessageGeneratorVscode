@@ -201,8 +201,8 @@ Stage changes → Click sparkle → Extension gathers git context
 ### From source
 
 ```bash
-git clone https://github.com/hithismani/gitmessagegenerator.git
-cd gitmessagegenerator
+git clone https://github.com/businessaddons/gitMessageGeneratorVscode.git
+cd gitMessageGeneratorVscode
 npm install
 npm run compile
 ```

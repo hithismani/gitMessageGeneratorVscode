@@ -3,12 +3,12 @@
   "displayName": "gitMessageGenerator",
   "description": "AI-powered git commit messages via Chutes.ai or OpenCode Zen — one click in Source Control",
   "version": "0.2.0",
-  "publisher": "hithismani",
+  "publisher": "businessaddonscom",
   "icon": "icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hithismani/gitMessageGeneratorVscode"
+    "url": "https://github.com/businessaddons/gitMessageGeneratorVscode"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -88,7 +88,11 @@
         "gitMessageGenerator.provider": {
           "type": "string",
           "default": "chutes",
-          "enum": ["chutes", "opencode-zen", "opencode-go"],
+          "enum": [
+            "chutes",
+            "opencode-zen",
+            "opencode-go"
+          ],
           "enumDescriptions": [
             "Chutes.ai — community-hosted open-source models",
             "OpenCode Zen — curated models via opencode.ai",
@@ -178,7 +182,9 @@
         "gitMessageGenerator.lockFiles": {
           "type": "array",
           "default": [],
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Additional lock files to skip (built-in list already covers common ones)",
           "order": 12
         },
@@ -204,11 +210,12 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "npx @vscode/vsce package --allow-missing-repository"
+    "package": "vsce package --allow-missing-repository"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
     "typescript": "^5.3.3"
   }
 }
