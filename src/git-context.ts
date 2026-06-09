@@ -1,6 +1,7 @@
 import { execFile } from "child_process";
+import * as path from "path";
 
-const LOCK_FILES = new Set([
+const DEFAULT_LOCK_FILES = [
   "package-lock.json",
   "yarn.lock",
   "pnpm-lock.yaml",
@@ -20,36 +21,59 @@ const LOCK_FILES = new Set([
   "packages.lock.json",
   "paket.lock",
   "gradle.lockfile",
-]);
+];
 
-const MAX_DIFF_LENGTH = 4000;
+const DIFF_CONCURRENCY = 5;
 
 function git(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile("git", args, { cwd, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-      if (err) {
-        reject(new Error(stderr || err.message));
-      } else {
-        resolve(stdout.trim());
+    execFile(
+      "git",
+      args,
+      { cwd, maxBuffer: 10 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err) {
+          reject(new Error(String(stderr || err.message)));
+        } else {
+          resolve(stdout.trim());
+        }
       }
-    });
+    );
   });
 }
 
-function isLockFile(filePath: string): boolean {
-  const name = filePath.split("/").pop() || filePath;
-  return LOCK_FILES.has(name);
+function isLockFile(
+  filePath: string,
+  extraLockFiles: string[]
+): boolean {
+  const name = path.basename(filePath);
+  const lockSet = new Set([...DEFAULT_LOCK_FILES, ...extraLockFiles]);
+  return lockSet.has(name);
 }
 
 function isBinaryDiff(diff: string): boolean {
   return diff.includes("Binary files") || diff.includes("GIT binary patch");
 }
 
-function truncateDiff(diff: string): string {
-  if (diff.length <= MAX_DIFF_LENGTH) {
+function truncateDiff(diff: string, maxLength: number): string {
+  if (diff.length <= maxLength) {
     return diff;
   }
-  return diff.slice(0, MAX_DIFF_LENGTH) + "\n... [truncated]";
+  return diff.slice(0, maxLength) + "\n... [truncated]";
+}
+
+async function withConcurrencyLimit<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<string>
+): Promise<string[]> {
+  const results: string[] = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
 }
 
 export interface GitContext {
@@ -59,10 +83,17 @@ export interface GitContext {
   diffs: string;
 }
 
-export async function gatherGitContext(cwd: string): Promise<GitContext> {
+export async function gatherGitContext(
+  cwd: string,
+  maxDiffLength: number = 4000,
+  recentCommitCount: number = 5,
+  extraLockFiles: string[] = []
+): Promise<GitContext> {
   const [branch, recentCommits, nameStatus] = await Promise.all([
     git(cwd, ["branch", "--show-current"]).catch(() => "HEAD (detached)"),
-    git(cwd, ["log", "--oneline", "-5"]).catch(() => "(no commits yet)"),
+    git(cwd, ["log", "--oneline", `-${recentCommitCount}`]).catch(
+      () => "(no commits yet)"
+    ),
     git(cwd, ["diff", "--name-status", "--cached"]),
   ]);
 
@@ -73,22 +104,31 @@ export async function gatherGitContext(cwd: string): Promise<GitContext> {
   const files = nameStatus
     .split("\n")
     .map((line) => {
-      const match = line.match(/^([A-Z])\t(.+)$/);
-      if (!match) {
-        // Handle renames: R100\told\tnew
-        const renameMatch = line.match(/^(R\d*)\t(.+)\t(.+)$/);
-        if (renameMatch) {
-          return { status: renameMatch[1], path: renameMatch[3], oldPath: renameMatch[2] };
-        }
-        return null;
+      const renameMatch = line.match(/^R\d*\t(.+)\t(.+)$/);
+      if (renameMatch) {
+        return {
+          status: "R",
+          path: renameMatch[2],
+          oldPath: renameMatch[1],
+        };
       }
+
+      const copyMatch = line.match(/^C\d*\t(.+)\t(.+)$/);
+      if (copyMatch) {
+        return { status: "C", path: copyMatch[2], oldPath: copyMatch[1] };
+      }
+
+      const match = line.match(/^([A-Z])\t(.+)$/);
+      if (!match) return null;
       return { status: match[1], path: match[2] };
     })
     .filter((f): f is NonNullable<typeof f> => f !== null);
 
-  const diffParts = await Promise.all(
-    files.map(async (file) => {
-      if (isLockFile(file.path)) {
+  const diffParts = await withConcurrencyLimit(
+    files,
+    DIFF_CONCURRENCY,
+    async (file) => {
+      if (isLockFile(file.path, extraLockFiles)) {
         return `--- ${file.path} ---\n[lock file changes omitted]`;
       }
 
@@ -101,11 +141,11 @@ export async function gatherGitContext(cwd: string): Promise<GitContext> {
         if (isBinaryDiff(diff)) {
           return `--- ${file.path} ---\n[binary file]`;
         }
-        return `--- ${file.path} ---\n${truncateDiff(diff)}`;
+        return `--- ${file.path} ---\n${truncateDiff(diff, maxDiffLength)}`;
       } catch {
         return `--- ${file.path} ---\n[could not read diff]`;
       }
-    })
+    }
   );
 
   return {
@@ -116,7 +156,10 @@ export async function gatherGitContext(cwd: string): Promise<GitContext> {
   };
 }
 
-export function assembleUserMessage(context: GitContext, previousMessage?: string): string {
+export function assembleUserMessage(
+  context: GitContext,
+  previousMessage?: string
+): string {
   let message = "";
 
   if (previousMessage) {

@@ -1,7 +1,24 @@
 import * as vscode from "vscode";
 import { gatherGitContext, assembleUserMessage } from "./git-context";
-import { generateCommitMessage, fetchAvailableModels } from "./chutes-api";
-import { DEFAULT_SYSTEM_PROMPT } from "./prompt";
+import { generateCommitMessage } from "./llm";
+import { getPromptForStyle, BUILTIN_STYLES } from "./prompt";
+import { chutesProvider } from "./providers/chutes";
+import { opencodeZenProvider } from "./providers/opencode-zen";
+import { opencodeGoProvider } from "./providers/opencode-go";
+import { Provider } from "./providers/types";
+
+const CONFIG_PREFIX = "gitMessageGenerator";
+const OLD_CONFIG_PREFIX = "chutesCommit";
+
+const PROVIDERS: Record<string, Provider> = {
+  chutes: chutesProvider,
+  "opencode-zen": opencodeZenProvider,
+  "opencode-go": opencodeGoProvider,
+};
+
+function getProvider(id: string | undefined): Provider {
+  return PROVIDERS[id || ""] || chutesProvider;
+}
 
 interface GitExtensionAPI {
   getAPI(version: 1): GitAPI;
@@ -20,6 +37,7 @@ interface GitRepository {
 
 let gitApi: GitAPI | undefined;
 let statusBarItem: vscode.StatusBarItem;
+let gitApiDisposables: vscode.Disposable[] = [];
 
 async function getGitApi(): Promise<GitAPI | undefined> {
   if (gitApi) return gitApi;
@@ -58,19 +76,24 @@ async function getRepository(): Promise<GitRepository | undefined> {
   return picked?.repo;
 }
 
+function getProviderKey(config: vscode.WorkspaceConfiguration): string {
+  return config.get<string>("provider", "chutes");
+}
+
 async function handleGenerateCommitMessage(): Promise<void> {
-  const config = vscode.workspace.getConfiguration("chutesCommit");
-  const apiKey = config.get<string>("apiKey", "");
+  const config = vscode.workspace.getConfiguration(CONFIG_PREFIX);
+  const provider = getProvider(getProviderKey(config));
+  const apiKey = config.get<string>(provider.keyConfigKey, "");
 
   if (!apiKey) {
     const action = await vscode.window.showErrorMessage(
-      "Chutes Commit: API key not configured.",
-      "Open Settings"
+      `gitMessageGenerator: ${provider.label} API key not configured.`,
+      "Configure API Key"
     );
-    if (action === "Open Settings") {
+    if (action === "Configure API Key") {
       vscode.commands.executeCommand(
         "workbench.action.openSettings",
-        "chutesCommit.apiKey"
+        `${CONFIG_PREFIX}.${provider.keyConfigKey}`
       );
     }
     return;
@@ -91,42 +114,60 @@ async function handleGenerateCommitMessage(): Promise<void> {
       const abortController = new AbortController();
       token.onCancellationRequested(() => abortController.abort());
 
-      let model = config.get<string>("model", "Qwen/Qwen3-32B-TEE");
+      let model = config.get<string>("model", "");
       const temperature = config.get<number>("temperature", 0.3);
       const maxTokens = config.get<number>("maxTokens", 512);
       const customPrompt = config.get<string>("customPrompt", "");
-      const systemPrompt = customPrompt || DEFAULT_SYSTEM_PROMPT;
+      const commitStyle = config.get<string>("commitStyle", "conventional");
+      const customStyles = config.get<Record<string, string>>("customStyles", {});
+      const systemPrompt = customPrompt || getPromptForStyle(commitStyle, customStyles);
       let userMessage = "";
 
-      const doGenerate = async () =>
+      if (!model) {
+        vscode.window.showErrorMessage(
+          "gitMessageGenerator: No model selected. Run \"Select Model\" to pick one."
+        );
+        return;
+      }
+
+      const doGenerate = async (m: string) =>
         generateCommitMessage({
           apiKey,
-          model,
+          baseUrl: provider.baseUrl,
+          model: m,
           systemPrompt,
           userMessage,
           temperature,
           maxTokens,
           signal: abortController.signal,
+          maxRetries: config.get<number>("maxRetries", 2),
+          retryDelayMs: config.get<number>("retryDelayMs", 1000),
         });
 
       try {
-        const context = await gatherGitContext(repo.rootUri.fsPath);
+        const context = await gatherGitContext(
+          repo.rootUri.fsPath,
+          config.get<number>("maxDiffLength", 4000),
+          config.get<number>("recentCommitCount", 5),
+          config.get<string[]>("lockFiles", [])
+        );
         userMessage = assembleUserMessage(context, previousMessage);
 
-        const commitMessage = await doGenerate();
+        const commitMessage = await doGenerate(model);
         repo.inputBox.value = commitMessage;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (message === "Request cancelled") return;
 
+        const autoFallback = config.get<boolean>("autoFallback", true);
         const isModelMissing =
           /not found|does not exist|not exist/i.test(message);
 
-        if (isModelMissing) {
-          const models = await fetchAvailableModels();
+        if (autoFallback && isModelMissing) {
+          const models = await provider.fetchModels();
           const fallback = models.find((m) => m.hot);
           if (fallback && fallback.name !== model) {
-            const old = model;
+            const oldModel = model;
             model = fallback.name;
             await config.update(
               "model",
@@ -135,20 +176,23 @@ async function handleGenerateCommitMessage(): Promise<void> {
             );
 
             try {
-              const commitMessage = await doGenerate();
+              const commitMessage = await doGenerate(model);
               repo.inputBox.value = commitMessage;
               vscode.window.showInformationMessage(
-                `Chutes Commit: "${old}" not found — switched to ${model}`
+                `gitMessageGenerator: "${oldModel}" not found — switched to ${model}`
               );
               return;
-            } catch {
-              // fallback also failed, show original error below
+            } catch (fallbackErr) {
+              vscode.window.showErrorMessage(
+                `gitMessageGenerator: Fallback to "${model}" also failed. ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`
+              );
+              return;
             }
           }
         }
 
         vscode.window.showErrorMessage(
-          `Chutes Commit (${model}): ${message}`
+          `gitMessageGenerator (${provider.label} / ${model}): ${message}`
         );
       }
     }
@@ -156,30 +200,37 @@ async function handleGenerateCommitMessage(): Promise<void> {
 }
 
 async function handleSelectModel(): Promise<void> {
+  const config = vscode.workspace.getConfiguration(CONFIG_PREFIX);
+  const provider = getProvider(getProviderKey(config));
+
   const quickPick = vscode.window.createQuickPick();
-  quickPick.placeholder = "Search for a model...";
+  quickPick.placeholder = `Search ${provider.label} models...`;
   quickPick.busy = true;
   quickPick.matchOnDescription = true;
   quickPick.matchOnDetail = true;
   quickPick.show();
 
   let allItems: vscode.QuickPickItem[] = [];
+  const modelMap = new Map<string, string>();
 
   try {
-    const models = await fetchAvailableModels();
+    const models = await provider.fetchModels();
     quickPick.busy = false;
-    allItems = models.map((m) => ({
-      label: `${m.hot ? "$(circle-filled) " : ""}${m.name}`,
-      description: m.hot ? "active" : "inactive",
-      detail: m.tagline,
-      modelName: m.name,
-    }));
+    for (const m of models) {
+      const label = `${m.hot ? "$(circle-filled) " : ""}${m.name}`;
+      modelMap.set(label, m.name);
+      allItems.push({
+        label,
+        description: m.hot ? "active" : "",
+        detail: m.tagline,
+      });
+    }
     quickPick.items = allItems;
   } catch (err) {
     quickPick.dispose();
     const message = err instanceof Error ? err.message : String(err);
     vscode.window.showErrorMessage(
-      `Chutes Commit: Failed to fetch models. ${message}`
+      `gitMessageGenerator: Failed to fetch models from ${provider.label}. ${message}`
     );
     return;
   }
@@ -198,19 +249,17 @@ async function handleSelectModel(): Promise<void> {
   });
 
   quickPick.onDidAccept(async () => {
-    const selected = quickPick.selectedItems[0] as
-      | { label: string; modelName?: string }
-      | undefined;
+    const selected = quickPick.selectedItems[0];
     quickPick.dispose();
-    if (selected?.modelName) {
-      const config = vscode.workspace.getConfiguration("chutesCommit");
+    const modelName = selected ? modelMap.get(selected.label) : undefined;
+    if (modelName) {
       await config.update(
         "model",
-        selected.modelName,
+        modelName,
         vscode.ConfigurationTarget.Global
       );
       vscode.window.showInformationMessage(
-        `Chutes Commit: Model set to ${selected.modelName}`
+        `gitMessageGenerator: Model set to ${modelName}`
       );
     }
   });
@@ -218,14 +267,60 @@ async function handleSelectModel(): Promise<void> {
   quickPick.onDidHide(() => quickPick.dispose());
 }
 
+async function handleSelectStyle(): Promise<void> {
+  const config = vscode.workspace.getConfiguration(CONFIG_PREFIX);
+  const currentStyle = config.get<string>("commitStyle", "conventional");
+  const customStyles = config.get<Record<string, string>>("customStyles", {});
+
+  const items: (vscode.QuickPickItem & { styleName: string })[] = [];
+
+  for (const [name] of Object.entries(BUILTIN_STYLES)) {
+    items.push({
+      label: name,
+      description: name === currentStyle ? "current" : "",
+      detail: name === "conventional" ? "feat(scope): description" : "add user auth endpoint",
+      styleName: name,
+    });
+  }
+
+  for (const [name] of Object.entries(customStyles)) {
+    items.push({
+      label: name,
+      description: name === currentStyle ? "current" : "custom",
+      detail: "user-defined style",
+      styleName: name,
+    });
+  }
+
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: "Select commit message style",
+  });
+
+  if (picked) {
+    await config.update(
+      "commitStyle",
+      picked.styleName,
+      vscode.ConfigurationTarget.Global
+    );
+    vscode.window.showInformationMessage(
+      `gitMessageGenerator: Commit style set to "${picked.styleName}"`
+    );
+  }
+}
+
 // --- Status bar ---
 
 function updateStatusBar(): void {
-  const config = vscode.workspace.getConfiguration("chutesCommit");
-  const model = config.get<string>("model", "Qwen/Qwen3-32B-TEE");
-  const shortName = model.includes("/") ? model.split("/").pop()! : model;
+  const config = vscode.workspace.getConfiguration(CONFIG_PREFIX);
+  const provider = getProvider(getProviderKey(config));
+  const model = config.get<string>("model", "");
+  const shortName = model
+    ? model.includes("/")
+      ? model.split("/").pop()!
+      : model
+    : "pick model";
   statusBarItem.text = `$(sparkle) ${shortName}`;
-  statusBarItem.tooltip = `Chutes Commit: ${model}\nClick to change model`;
+  statusBarItem.tooltip = `gitMessageGenerator: ${model || "no model selected"}\nProvider: ${provider.label}\nClick to change model`;
 }
 
 function updateStatusBarVisibility(): void {
@@ -237,49 +332,119 @@ function updateStatusBarVisibility(): void {
   }
 }
 
+async function setupGitListeners(): Promise<void> {
+  const api = await getGitApi();
+  if (api) {
+    updateStatusBarVisibility();
+    gitApiDisposables.push(
+      api.onDidOpenRepository(() => updateStatusBarVisibility()),
+      api.onDidCloseRepository(() => updateStatusBarVisibility())
+    );
+  }
+}
+
+// --- Settings migration ---
+
+async function migrateSettings(): Promise<void> {
+  try {
+    const oldConfig = vscode.workspace.getConfiguration(OLD_CONFIG_PREFIX);
+    const newConfig = vscode.workspace.getConfiguration(CONFIG_PREFIX);
+
+    const oldKeys = oldConfig.get<string>("apiKey", "");
+    const oldModel = oldConfig.get<string>("model", "");
+
+    const newKey = newConfig.get<string>("chutesApiKey", "");
+    const newModel = newConfig.get<string>("model", "");
+    const newProvider = newConfig.get<string>("provider", "");
+
+    let migrated = false;
+
+    if (!newKey && oldKeys) {
+      await newConfig.update(
+        "chutesApiKey",
+        oldKeys,
+        vscode.ConfigurationTarget.Global
+      );
+      migrated = true;
+    }
+
+    if (!newModel && oldModel) {
+      await newConfig.update(
+        "model",
+        oldModel,
+        vscode.ConfigurationTarget.Global
+      );
+      migrated = true;
+    }
+
+    if (!newProvider && oldKeys) {
+      await newConfig.update(
+        "provider",
+        "chutes",
+        vscode.ConfigurationTarget.Global
+      );
+      migrated = true;
+    }
+
+    if (migrated) {
+      vscode.window.showInformationMessage(
+        "gitMessageGenerator: Migrated settings from previous version."
+      );
+    }
+  } catch {
+    // migration is best-effort, never block activation
+  }
+}
+
 // --- Activation ---
 
 export function activate(context: vscode.ExtensionContext): void {
+  migrateSettings().catch(() => {});
+
   statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,
     100
   );
-  statusBarItem.command = "chutes-commit.selectModel";
+  statusBarItem.command = "gitmessagegenerator.selectModel";
   updateStatusBar();
 
   context.subscriptions.push(
     statusBarItem,
     vscode.commands.registerCommand(
-      "chutes-commit.generateCommitMessage",
+      "gitmessagegenerator.generateCommitMessage",
       handleGenerateCommitMessage
     ),
     vscode.commands.registerCommand(
-      "chutes-commit.selectModel",
+      "gitmessagegenerator.selectModel",
       handleSelectModel
     ),
-    vscode.commands.registerCommand("chutes-commit.openSettings", () =>
+    vscode.commands.registerCommand(
+      "gitmessagegenerator.selectStyle",
+      handleSelectStyle
+    ),
+    vscode.commands.registerCommand("gitmessagegenerator.openSettings", () =>
       vscode.commands.executeCommand(
         "workbench.action.openSettings",
-        "chutesCommit"
+        CONFIG_PREFIX
       )
     ),
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("chutesCommit.model")) {
+      if (
+        e.affectsConfiguration(`${CONFIG_PREFIX}.model`) ||
+        e.affectsConfiguration(`${CONFIG_PREFIX}.provider`)
+      ) {
         updateStatusBar();
       }
     })
   );
 
-  // Show status bar only when git repos are present
-  getGitApi().then((api) => {
-    if (api) {
-      updateStatusBarVisibility();
-      context.subscriptions.push(
-        api.onDidOpenRepository(() => updateStatusBarVisibility()),
-        api.onDidCloseRepository(() => updateStatusBarVisibility())
-      );
-    }
-  });
+  setupGitListeners().catch(() => {});
 }
 
-export function deactivate(): void {}
+export function deactivate(): void {
+  statusBarItem?.dispose();
+  for (const d of gitApiDisposables) {
+    d.dispose();
+  }
+  gitApiDisposables = [];
+}

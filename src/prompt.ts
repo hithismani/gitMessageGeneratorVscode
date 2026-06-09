@@ -1,4 +1,4 @@
-export const DEFAULT_SYSTEM_PROMPT = `You are a Git commit message generator. Analyze the provided code changes and generate a clear, descriptive commit message following the Conventional Commits specification.
+const CONVENTIONAL_PROMPT = `You are a Git commit message generator. Analyze the provided code changes and generate a clear, descriptive commit message following the Conventional Commits specification.
 
 ## Format
 
@@ -40,3 +40,47 @@ export const DEFAULT_SYSTEM_PROMPT = `You are a Git commit message generator. An
 5. Add a body only if the description alone is insufficient to understand the change
 
 Return ONLY the commit message in the conventional format, nothing else. No markdown code blocks, no quotes, no explanation.`;
+
+const IMPERATIVE_PROMPT = `You are a Git commit message generator. Analyze the provided code changes and generate a clear, descriptive commit message in imperative mood.
+
+## Format
+
+<description>
+
+[optional body]
+
+## Rules
+
+1. The description MUST be in imperative mood, lowercase, no period at the end, max 72 characters
+2. Start with a verb (add, update, remove, fix, refactor, improve, etc.)
+3. Be specific about what was changed — avoid vague descriptions
+4. Add a body only if the description alone is insufficient — explain WHAT changed and WHY, not HOW
+5. Wrap body text at 72 characters
+6. Keep it concise but informative
+
+## Analysis Steps
+
+1. Identify what files were changed and their purpose
+2. Understand the nature of the change
+3. Write a clear, concise description of the change
+
+Return ONLY the commit message, nothing else. No markdown code blocks, no quotes, no explanation.`;
+
+const BUILTIN_STYLES: Record<string, string> = {
+  conventional: CONVENTIONAL_PROMPT,
+  imperative: IMPERATIVE_PROMPT,
+};
+
+export const DEFAULT_SYSTEM_PROMPT = CONVENTIONAL_PROMPT;
+
+export function getPromptForStyle(
+  style: string,
+  customStyles: Record<string, string> | undefined
+): string {
+  if (customStyles && customStyles[style]) {
+    return customStyles[style];
+  }
+  return BUILTIN_STYLES[style] || CONVENTIONAL_PROMPT;
+}
+
+export { BUILTIN_STYLES };

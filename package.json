@@ -1,112 +1,202 @@
 {
-  "name": "chutes-commit",
-  "displayName": "Chutes Commit",
-  "description": "AI-powered commit messages using any model on Chutes.ai — one click in the Source Control panel",
-  "version": "0.1.0",
+  "name": "gitmessagegenerator",
+  "displayName": "gitMessageGenerator",
+  "description": "AI-powered git commit messages via Chutes.ai or OpenCode Zen — one click in Source Control",
+  "version": "0.2.0",
   "publisher": "hithismani",
   "icon": "icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hithismani/chutes-commit"
+    "url": "https://github.com/hithismani/gitmessagegenerator"
   },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
     "SCM Providers",
-    "Machine Learning",
-    "Other"
+    "Machine Learning"
   ],
   "keywords": [
     "git",
     "commit",
     "ai",
     "chutes",
+    "opencode",
     "conventional-commits",
     "deepseek",
+    "qwen",
     "llama",
-    "qwen"
+    "openai"
   ],
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "chutes-commit.generateCommitMessage",
-        "title": "Generate Commit Message using Chutes.ai",
+        "command": "gitmessagegenerator.generateCommitMessage",
+        "title": "Generate Commit Message",
         "icon": "$(sparkle)",
-        "category": "Chutes Commit"
+        "category": "gitMessageGenerator"
       },
       {
-        "command": "chutes-commit.selectModel",
+        "command": "gitmessagegenerator.selectModel",
         "title": "Select Model",
         "icon": "$(server)",
-        "category": "Chutes Commit"
+        "category": "gitMessageGenerator"
       },
       {
-        "command": "chutes-commit.openSettings",
+        "command": "gitmessagegenerator.selectStyle",
+        "title": "Select Commit Style",
+        "icon": "$(symbol-color)",
+        "category": "gitMessageGenerator"
+      },
+      {
+        "command": "gitmessagegenerator.openSettings",
         "title": "Open Settings",
         "icon": "$(gear)",
-        "category": "Chutes Commit"
+        "category": "gitMessageGenerator"
       }
     ],
     "menus": {
       "scm/title": [
         {
-          "command": "chutes-commit.generateCommitMessage",
+          "command": "gitmessagegenerator.generateCommitMessage",
           "group": "navigation",
           "when": "scmProvider == git"
         },
         {
-          "command": "chutes-commit.selectModel",
+          "command": "gitmessagegenerator.selectModel",
           "group": "1_commit_pilot",
           "when": "scmProvider == git"
         },
         {
-          "command": "chutes-commit.openSettings",
+          "command": "gitmessagegenerator.selectStyle",
+          "group": "1_commit_pilot",
+          "when": "scmProvider == git"
+        },
+        {
+          "command": "gitmessagegenerator.openSettings",
           "group": "1_commit_pilot",
           "when": "scmProvider == git"
         }
       ]
     },
     "configuration": {
-      "title": "Chutes Commit",
+      "title": "gitMessageGenerator",
       "properties": {
-        "chutesCommit.apiKey": {
+        "gitMessageGenerator.provider": {
+          "type": "string",
+          "default": "chutes",
+          "enum": ["chutes", "opencode-zen", "opencode-go"],
+          "enumDescriptions": [
+            "Chutes.ai — community-hosted open-source models",
+            "OpenCode Zen — curated models via opencode.ai",
+            "OpenCode Go — low-cost subscription tier via opencode.ai"
+          ],
+          "description": "AI provider to use for commit message generation",
+          "order": 0
+        },
+        "gitMessageGenerator.chutesApiKey": {
           "type": "string",
           "default": "",
           "description": "Chutes.ai API key (cpk_...)",
-          "order": 0
-        },
-        "chutesCommit.model": {
-          "type": "string",
-          "default": "Qwen/Qwen3-32B-TEE",
-          "markdownDescription": "Model ID to use on Chutes.ai. Run **Chutes Commit: Select Model** from the command palette to browse all available models live.",
           "order": 1
         },
-        "chutesCommit.temperature": {
+        "gitMessageGenerator.opencodeZenKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenCode Zen API key (get one at https://opencode.ai/auth)",
+          "order": 2
+        },
+        "gitMessageGenerator.model": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model ID to use. Run **gitMessageGenerator: Select Model** from the command palette to browse available models live.",
+          "order": 3
+        },
+        "gitMessageGenerator.commitStyle": {
+          "type": "string",
+          "default": "conventional",
+          "markdownDescription": "Commit message style. Built-in: `conventional`, `imperative`. Or the name of a style defined in `#gitMessageGenerator.customStyles#`.",
+          "order": 4
+        },
+        "gitMessageGenerator.customStyles": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string"
+          },
+          "markdownDescription": "Custom commit message styles. Key = style name, value = system prompt. Set at workspace level for per-project defaults.",
+          "order": 5
+        },
+        "gitMessageGenerator.temperature": {
           "type": "number",
           "default": 0.3,
           "minimum": 0,
           "maximum": 2,
           "description": "Generation temperature (0-2)",
-          "order": 2
+          "order": 6
         },
-        "chutesCommit.maxTokens": {
+        "gitMessageGenerator.maxTokens": {
           "type": "number",
           "default": 512,
           "minimum": 64,
           "maximum": 2048,
           "description": "Max response tokens (64-2048)",
-          "order": 3
+          "order": 7
         },
-        "chutesCommit.customPrompt": {
+        "gitMessageGenerator.autoFallback": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically switch to another available model if the configured one fails",
+          "order": 8
+        },
+        "gitMessageGenerator.customPrompt": {
           "type": "string",
           "default": "",
           "editPresentation": "multilineText",
           "description": "Custom system prompt override. If set, replaces the default conventional commits prompt entirely.",
-          "order": 4
+          "order": 9
+        },
+        "gitMessageGenerator.maxDiffLength": {
+          "type": "number",
+          "default": 4000,
+          "minimum": 500,
+          "maximum": 40000,
+          "description": "Max diff characters sent per file to the LLM",
+          "order": 10
+        },
+        "gitMessageGenerator.recentCommitCount": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "maximum": 20,
+          "description": "Number of recent commits to include as context",
+          "order": 11
+        },
+        "gitMessageGenerator.lockFiles": {
+          "type": "array",
+          "default": [],
+          "items": { "type": "string" },
+          "description": "Additional lock files to skip (built-in list already covers common ones)",
+          "order": 12
+        },
+        "gitMessageGenerator.maxRetries": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Max API call retries (transient errors only — auth/not-found errors never retry)",
+          "order": 13
+        },
+        "gitMessageGenerator.retryDelayMs": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 100,
+          "maximum": 10000,
+          "description": "Base delay between retries in ms (increases with each attempt)",
+          "order": 14
         }
       }
     }

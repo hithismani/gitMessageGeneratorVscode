@@ -4,7 +4,7 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 
 export interface HttpRequestOptions {
   url: string;
-  method?: "GET" | "POST";
+  method?: string;
   headers?: Record<string, string>;
   body?: string;
   timeoutMs?: number;
@@ -21,16 +21,27 @@ export function httpRequest(options: HttpRequestOptions): Promise<string> {
     const parsed = new URL(options.url);
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
+    let settled = false;
+
+    const done = (err: Error | null, body?: string) => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err);
+      else resolve(body!);
+    };
+
+    const headers: Record<string, string> = { ...options.headers };
+    if (!("Accept" in headers)) {
+      headers["Accept"] = "application/json";
+    }
+
     const req = https.request(
       {
         hostname: parsed.hostname,
-        port: 443,
+        port: parsed.port ? Number(parsed.port) : 443,
         path: parsed.pathname + parsed.search,
         method: options.method ?? "GET",
-        headers: {
-          Accept: "application/json",
-          ...options.headers,
-        },
+        headers,
         timeout: timeoutMs,
       },
       (res) => {
@@ -41,39 +52,41 @@ export function httpRequest(options: HttpRequestOptions): Promise<string> {
 
           if (res.statusCode !== 200) {
             try {
-              const parsed = JSON.parse(body);
+              const parsedErr = JSON.parse(body);
               const msg =
-                parsed.error?.message ||
-                parsed.detail ||
-                `HTTP ${res.statusCode}`;
-              reject(new Error(msg));
+                parsedErr.error?.message ||
+                String(parsedErr.detail ?? "") ||
+                `HTTP ${res.statusCode ?? "unknown"}`;
+              done(new Error(msg));
             } catch {
-              reject(
-                new Error(`HTTP ${res.statusCode}: ${body.slice(0, 200)}`)
+              done(
+                new Error(
+                  `HTTP ${res.statusCode ?? "unknown"}: ${body.slice(0, 200)}`
+                )
               );
             }
             return;
           }
 
-          resolve(body);
+          done(null, body);
         });
       }
     );
 
-    req.on("error", reject);
+    req.on("error", (err) => done(err));
     req.on("timeout", () => {
       req.destroy();
-      reject(new Error("Request timed out"));
+      done(new Error("Request timed out"));
     });
 
     if (options.signal) {
       const onAbort = () => {
         req.destroy();
-        reject(new Error("Request cancelled"));
+        done(new Error("Request cancelled"));
       };
       options.signal.addEventListener("abort", onAbort, { once: true });
       req.on("close", () =>
-        options.signal!.removeEventListener("abort", onAbort)
+        options.signal?.removeEventListener("abort", onAbort)
       );
     }
 
