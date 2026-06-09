@@ -52,6 +52,12 @@
         "category": "gitMessageGenerator"
       },
       {
+        "command": "gitmessagegenerator.setApiKey",
+        "title": "Set API Key",
+        "icon": "$(key)",
+        "category": "gitMessageGenerator"
+      },
+      {
         "command": "gitmessagegenerator.openSettings",
         "title": "Open Settings",
         "icon": "$(gear)",
@@ -79,6 +85,11 @@
           "command": "gitmessagegenerator.openSettings",
           "group": "1_commit_pilot",
           "when": "scmProvider == git"
+        },
+        {
+          "command": "gitmessagegenerator.setApiKey",
+          "group": "1_commit_pilot",
+          "when": "scmProvider == git"
         }
       ]
     },
@@ -104,13 +115,13 @@
         "gitMessageGenerator.chutesApiKey": {
           "type": "string",
           "default": "",
-          "description": "Chutes.ai API key (cpk_...)",
+          "description": "Chutes.ai API key — stored securely via VS Code SecretStorage. Run gitMessageGenerator: Set API Key instead of entering here.",
           "order": 1
         },
         "gitMessageGenerator.opencodeZenKey": {
           "type": "string",
           "default": "",
-          "description": "OpenCode Zen / Go API key (shared — get one at https://opencode.ai/auth)",
+          "description": "OpenCode Zen / Go API key — stored securely via VS Code SecretStorage. Run gitMessageGenerator: Set API Key instead of entering here.",
           "order": 2
         },
         "gitMessageGenerator.model": {

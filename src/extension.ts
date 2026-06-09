@@ -38,6 +38,33 @@ interface GitRepository {
 let gitApi: GitAPI | undefined;
 let statusBarItem: vscode.StatusBarItem;
 let gitApiDisposables: vscode.Disposable[] = [];
+let extensionContext: vscode.ExtensionContext;
+
+// --- Secret storage for API keys ---
+
+async function getApiKey(keyName: string): Promise<string> {
+  const stored = await extensionContext.secrets.get(keyName);
+  if (stored) return stored;
+
+  // fallback: migrate from old plaintext config
+  const config = vscode.workspace.getConfiguration(CONFIG_PREFIX);
+  const fromConfig = config.get<string>(keyName, "");
+  if (fromConfig) {
+    await extensionContext.secrets.store(keyName, fromConfig);
+    await config.update(keyName, undefined, vscode.ConfigurationTarget.Global);
+    return fromConfig;
+  }
+
+  return "";
+}
+
+async function setApiKey(keyName: string, value: string): Promise<void> {
+  await extensionContext.secrets.store(keyName, value);
+  const config = vscode.workspace.getConfiguration(CONFIG_PREFIX);
+  await config.update(keyName, undefined, vscode.ConfigurationTarget.Global);
+}
+
+// --- Git API ---
 
 async function getGitApi(): Promise<GitAPI | undefined> {
   if (gitApi) return gitApi;
@@ -80,21 +107,42 @@ function getProviderKey(config: vscode.WorkspaceConfiguration): string {
   return config.get<string>("provider", "chutes");
 }
 
+// --- Set API key command ---
+
+async function handleSetApiKey(): Promise<void> {
+  const config = vscode.workspace.getConfiguration(CONFIG_PREFIX);
+  const provider = getProvider(getProviderKey(config));
+
+  const value = await vscode.window.showInputBox({
+    prompt: `Enter API key for ${provider.label}`,
+    placeHolder:
+      provider.id === "chutes" ? "cpk_..." : "opencode zen/go key...",
+    password: true,
+    ignoreFocusOut: true,
+  });
+
+  if (value) {
+    await setApiKey(provider.keyConfigKey, value);
+    vscode.window.showInformationMessage(
+      `gitMessageGenerator: API key saved for ${provider.label}`
+    );
+  }
+}
+
+// --- Generate commit message ---
+
 async function handleGenerateCommitMessage(): Promise<void> {
   const config = vscode.workspace.getConfiguration(CONFIG_PREFIX);
   const provider = getProvider(getProviderKey(config));
-  const apiKey = config.get<string>(provider.keyConfigKey, "");
+  const apiKey = await getApiKey(provider.keyConfigKey);
 
   if (!apiKey) {
     const action = await vscode.window.showErrorMessage(
       `gitMessageGenerator: ${provider.label} API key not configured.`,
-      "Configure API Key"
+      "Set API Key"
     );
-    if (action === "Configure API Key") {
-      vscode.commands.executeCommand(
-        "workbench.action.openSettings",
-        `${CONFIG_PREFIX}.${provider.keyConfigKey}`
-      );
+    if (action === "Set API Key") {
+      handleSetApiKey();
     }
     return;
   }
@@ -119,13 +167,17 @@ async function handleGenerateCommitMessage(): Promise<void> {
       const maxTokens = config.get<number>("maxTokens", 512);
       const customPrompt = config.get<string>("customPrompt", "");
       const commitStyle = config.get<string>("commitStyle", "conventional");
-      const customStyles = config.get<Record<string, string>>("customStyles", {});
-      const systemPrompt = customPrompt || getPromptForStyle(commitStyle, customStyles);
+      const customStyles = config.get<Record<string, string>>(
+        "customStyles",
+        {}
+      );
+      const systemPrompt =
+        customPrompt || getPromptForStyle(commitStyle, customStyles);
       let userMessage = "";
 
       if (!model) {
         vscode.window.showErrorMessage(
-          "gitMessageGenerator: No model selected. Run \"Select Model\" to pick one."
+          'gitMessageGenerator: No model selected. Run "Select Model" to pick one.'
         );
         return;
       }
@@ -184,7 +236,11 @@ async function handleGenerateCommitMessage(): Promise<void> {
               return;
             } catch (fallbackErr) {
               vscode.window.showErrorMessage(
-                `gitMessageGenerator: Fallback to "${model}" also failed. ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`
+                `gitMessageGenerator: Fallback to "${model}" also failed. ${
+                  fallbackErr instanceof Error
+                    ? fallbackErr.message
+                    : String(fallbackErr)
+                }`
               );
               return;
             }
@@ -198,6 +254,8 @@ async function handleGenerateCommitMessage(): Promise<void> {
     }
   );
 }
+
+// --- Select model ---
 
 async function handleSelectModel(): Promise<void> {
   const config = vscode.workspace.getConfiguration(CONFIG_PREFIX);
@@ -223,7 +281,11 @@ async function handleSelectModel(): Promise<void> {
     ...providerButtons,
     {
       iconPath: new vscode.ThemeIcon("key"),
-      tooltip: `API key: ${provider.keyConfigKey}${provider.keyConfigKey === "opencodeZenKey" ? " (shared by Zen & Go)" : ""}`,
+      tooltip: `API key: ${provider.keyConfigKey}${
+        provider.keyConfigKey === "opencodeZenKey"
+          ? " (shared by Zen & Go)"
+          : ""
+      }`,
       providerKey: "",
     },
   ];
@@ -231,7 +293,9 @@ async function handleSelectModel(): Promise<void> {
   async function loadModels() {
     quickPick.busy = true;
     quickPick.placeholder = `Search ${provider.label} models...`;
-    quickPick.title = `${provider.label} — ${provider.keyConfigKey}${provider.keyConfigKey === "opencodeZenKey" ? " (shared)" : ""}`;
+    quickPick.title = `${provider.label} — ${provider.keyConfigKey}${
+      provider.keyConfigKey === "opencodeZenKey" ? " (shared)" : ""
+    }`;
 
     const allItems: vscode.QuickPickItem[] = [];
     const modelMap = new Map<string, string>();
@@ -282,7 +346,11 @@ async function handleSelectModel(): Promise<void> {
     if (!providerKey) return;
     currentKey = providerKey;
     provider = getProvider(currentKey);
-    await config.update("provider", currentKey, vscode.ConfigurationTarget.Global);
+    await config.update(
+      "provider",
+      currentKey,
+      vscode.ConfigurationTarget.Global
+    );
     ({ allItems, modelMap } = await loadModels());
   });
 
@@ -291,7 +359,11 @@ async function handleSelectModel(): Promise<void> {
     quickPick.dispose();
     const modelName = selected ? modelMap.get(selected.label) : undefined;
     if (modelName) {
-      await config.update("model", modelName, vscode.ConfigurationTarget.Global);
+      await config.update(
+        "model",
+        modelName,
+        vscode.ConfigurationTarget.Global
+      );
       vscode.window.showInformationMessage(
         `gitMessageGenerator: Model set to ${modelName}`
       );
@@ -300,6 +372,8 @@ async function handleSelectModel(): Promise<void> {
 
   quickPick.onDidHide(() => quickPick.dispose());
 }
+
+// --- Select style ---
 
 async function handleSelectStyle(): Promise<void> {
   const config = vscode.workspace.getConfiguration(CONFIG_PREFIX);
@@ -312,7 +386,10 @@ async function handleSelectStyle(): Promise<void> {
     items.push({
       label: name,
       description: name === currentStyle ? "current" : "",
-      detail: name === "conventional" ? "feat(scope): description" : "add user auth endpoint",
+      detail:
+        name === "conventional"
+          ? "feat(scope): description"
+          : "add user auth endpoint",
       styleName: name,
     });
   }
@@ -354,7 +431,9 @@ function updateStatusBar(): void {
       : model
     : "pick model";
   statusBarItem.text = `$(sparkle) ${shortName}`;
-  statusBarItem.tooltip = `gitMessageGenerator: ${model || "no model selected"}\nProvider: ${provider.label}\nClick to change model`;
+  statusBarItem.tooltip = `gitMessageGenerator: ${
+    model || "no model selected"
+  }\nProvider: ${provider.label}\nClick to change model`;
 }
 
 function updateStatusBarVisibility(): void {
@@ -384,39 +463,27 @@ async function migrateSettings(): Promise<void> {
     const oldConfig = vscode.workspace.getConfiguration(OLD_CONFIG_PREFIX);
     const newConfig = vscode.workspace.getConfiguration(CONFIG_PREFIX);
 
-    const oldKeys = oldConfig.get<string>("apiKey", "");
+    const oldKey = oldConfig.get<string>("apiKey", "");
     const oldModel = oldConfig.get<string>("model", "");
 
-    const newKey = newConfig.get<string>("chutesApiKey", "");
     const newModel = newConfig.get<string>("model", "");
     const newProvider = newConfig.get<string>("provider", "");
 
     let migrated = false;
 
-    if (!newKey && oldKeys) {
-      await newConfig.update(
-        "chutesApiKey",
-        oldKeys,
-        vscode.ConfigurationTarget.Global
-      );
+    if (oldKey) {
+      await extensionContext.secrets.store("chutesApiKey", oldKey);
+      await oldConfig.update("apiKey", undefined, vscode.ConfigurationTarget.Global);
       migrated = true;
     }
 
     if (!newModel && oldModel) {
-      await newConfig.update(
-        "model",
-        oldModel,
-        vscode.ConfigurationTarget.Global
-      );
+      await newConfig.update("model", oldModel, vscode.ConfigurationTarget.Global);
       migrated = true;
     }
 
-    if (!newProvider && oldKeys) {
-      await newConfig.update(
-        "provider",
-        "chutes",
-        vscode.ConfigurationTarget.Global
-      );
+    if (!newProvider && oldKey) {
+      await newConfig.update("provider", "chutes", vscode.ConfigurationTarget.Global);
       migrated = true;
     }
 
@@ -426,13 +493,14 @@ async function migrateSettings(): Promise<void> {
       );
     }
   } catch {
-    // migration is best-effort, never block activation
+    // migration is best-effort
   }
 }
 
 // --- Activation ---
 
 export function activate(context: vscode.ExtensionContext): void {
+  extensionContext = context;
   migrateSettings().catch(() => {});
 
   statusBarItem = vscode.window.createStatusBarItem(
@@ -455,6 +523,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(
       "gitmessagegenerator.selectStyle",
       handleSelectStyle
+    ),
+    vscode.commands.registerCommand(
+      "gitmessagegenerator.setApiKey",
+      handleSetApiKey
     ),
     vscode.commands.registerCommand("gitmessagegenerator.openSettings", () =>
       vscode.commands.executeCommand(
