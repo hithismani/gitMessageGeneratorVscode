@@ -16,6 +16,16 @@ function isRetryable(message: string): boolean {
 function cleanResponse(text: string): string {
   let cleaned = text.trim();
 
+  // Strip reasoning blocks emitted by reasoning models (DeepSeek-R1, QwQ, etc.)
+  // These appear inline in the content field as <think>...</think>.
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  // Handle an unclosed opening tag (model never closed it): drop the rest.
+  cleaned = cleaned.replace(/<think>[\s\S]*$/gi, "");
+  // Remove any leftover stray tags.
+  cleaned = cleaned.replace(/<\/?think>/gi, "");
+
+  cleaned = cleaned.trim();
+
   const fence = cleaned.match(/```(?:\w*)\n?([\s\S]*?)```/);
   if (fence) {
     cleaned = fence[1].trim();
@@ -43,6 +53,7 @@ export async function generateCommitMessage(options: {
   timeoutMs?: number;
   maxRetries?: number;
   retryDelayMs?: number;
+  onProgress?: (message: string) => void;
 }): Promise<string> {
   const body = JSON.stringify({
     model: options.model,
@@ -63,6 +74,14 @@ export async function generateCommitMessage(options: {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (options.signal?.aborted) {
       throw new Error("Request cancelled");
+    }
+
+    if (attempt > 0) {
+      options.onProgress?.(
+        `Retry attempt ${attempt}/${maxRetries} — waiting for response...`
+      );
+    } else {
+      options.onProgress?.("Waiting for response...");
     }
 
     try {

@@ -158,7 +158,7 @@ async function handleGenerateCommitMessage(): Promise<void> {
       title: "Generating commit message...",
       cancellable: true,
     },
-    async (_progress, token) => {
+    async (progress, token) => {
       const abortController = new AbortController();
       token.onCancellationRequested(() => abortController.abort());
 
@@ -182,6 +182,9 @@ async function handleGenerateCommitMessage(): Promise<void> {
         return;
       }
 
+      const report = (message: string) =>
+        progress.report({ message });
+
       const doGenerate = async (m: string) =>
         generateCommitMessage({
           apiKey,
@@ -194,9 +197,11 @@ async function handleGenerateCommitMessage(): Promise<void> {
           signal: abortController.signal,
           maxRetries: config.get<number>("maxRetries", 2),
           retryDelayMs: config.get<number>("retryDelayMs", 1000),
+          onProgress: report,
         });
 
       try {
+        report("Gathering git context...");
         const context = await gatherGitContext(
           repo.rootUri.fsPath,
           config.get<number>("maxDiffLength", 4000),
@@ -205,6 +210,7 @@ async function handleGenerateCommitMessage(): Promise<void> {
         );
         userMessage = assembleUserMessage(context, previousMessage);
 
+        report(`Sending to ${provider.label} / ${model}...`);
         const commitMessage = await doGenerate(model);
         repo.inputBox.value = commitMessage;
       } catch (err) {
@@ -213,37 +219,47 @@ async function handleGenerateCommitMessage(): Promise<void> {
 
         const autoFallback = config.get<boolean>("autoFallback", true);
         const isModelMissing =
-          /not found|does not exist|not exist/i.test(message);
+          /not found|does not exist|not exist|unavailable|not available|no longer|removed|deprecated|unsupported|unknown model|invalid model/i.test(
+            message
+          );
 
         if (autoFallback && isModelMissing) {
-          const models = await provider.fetchModels();
-          const fallback = models.find((m) => m.hot);
-          if (fallback && fallback.name !== model) {
-            const oldModel = model;
-            model = fallback.name;
-            await config.update(
-              "model",
-              model,
-              vscode.ConfigurationTarget.Global
-            );
+          try {
+            report(`Looking up available ${provider.label} models...`);
+            const models = await provider.fetchModels();
+            const fallback =
+              models.find((m) => m.hot && m.name !== model) ||
+              models.find((m) => m.name !== model);
+            if (fallback) {
+              const oldModel = model;
+              model = fallback.name;
+              await config.update(
+                "model",
+                model,
+                vscode.ConfigurationTarget.Global
+              );
 
-            try {
-              const commitMessage = await doGenerate(model);
-              repo.inputBox.value = commitMessage;
-              vscode.window.showInformationMessage(
-                `gitMessageGenerator: "${oldModel}" not found — switched to ${model}`
-              );
-              return;
-            } catch (fallbackErr) {
-              vscode.window.showErrorMessage(
-                `gitMessageGenerator: Fallback to "${model}" also failed. ${
-                  fallbackErr instanceof Error
-                    ? fallbackErr.message
-                    : String(fallbackErr)
-                }`
-              );
-              return;
+              report(`Switched to ${model}, sending request...`);
+              try {
+                const commitMessage = await doGenerate(model);
+                repo.inputBox.value = commitMessage;
+                vscode.window.showInformationMessage(
+                  `gitMessageGenerator: "${oldModel}" not found — switched to ${model}`
+                );
+                return;
+              } catch (fallbackErr) {
+                vscode.window.showErrorMessage(
+                  `gitMessageGenerator: Fallback to "${model}" also failed. ${
+                    fallbackErr instanceof Error
+                      ? fallbackErr.message
+                      : String(fallbackErr)
+                  }`
+                );
+                return;
+              }
             }
+          } catch {
+            // fetchModels failed — fall through to generic error below
           }
         }
 
